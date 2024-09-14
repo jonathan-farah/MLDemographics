@@ -1,0 +1,194 @@
+# Import necessary libraries
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+import pandas as pd
+import csv
+
+# Load your dataset with error handling
+try:
+    df = pd.read_csv('/content/Race.csv', quoting=csv.QUOTE_NONE, escapechar='\\', on_bad_lines='skip')
+    print("Data loaded successfully.")
+    # Optionally, inspect the first few rows
+    print(df.head())
+except pd.errors.ParserError as e:
+    print(f"ParserError: {e}")
+except Exception as e:
+    print(f"An error occurred: {e}")
+
+df.head()
+
+
+selected_columns = [ '"Year"', '"White Alone"', '"Black Alone"', '"American Indian or Alaskan Native"',	'"Asian Alone"', '"Hawaiian or Pacific Islander Alone"']  # Replace with your column names
+df_selected = df[selected_columns]
+print(df_selected)
+
+Alabamaset=df_selected.iloc[30:60]
+
+Alabamaset.head()
+"""
+States = []
+For I in range(0, len(df_selected), 30):
+    states.append(df_selected.iloc[I, I+30])
+states.append((“name of state”, df_selected))
+make a for loop for the columns as well columns for the race column as well
+"""
+
+for col in Alabamaset.columns:
+    if Alabamaset[col].dtype == 'object':
+        Alabamaset[col] = Alabamaset[col].astype(str).str.replace('"', '', regex=False)
+
+# Convert columns to numeric where applicable
+Alabamaset = Alabamaset.apply(pd.to_numeric, errors='ignore')
+
+# Display the cleaned DataFrame
+print("Cleaned DataFrame:")
+Alabamaset.head()
+print(Alabamaset)
+Alabamaset.rename(columns=lambda x: x.strip('"'), inplace=True)
+Alabamaset.head()
+for col in Alabamaset.columns:
+    if Alabamaset[col].dtype == 'object':
+        Alabamaset[col] = Alabamaset[col].astype(str).str.replace('"', '', regex=False)
+
+# Convert columns to numeric where applicable
+Alabamaset = Alabamaset.apply(pd.to_numeric, errors='ignore')
+Alabamaset.rename(columns={
+    'White Alone': 'White',
+    'Black Alone': 'Black or African American',
+    'American Indian or Alaskan Native': 'American Indian and Alaska Native',
+    'Asian Alone': 'Asian',
+    'Hawaiian or Pacific Islander Alone': 'Native Hawaiian and Other Pacific Islander'
+
+}, inplace=True)
+
+
+print(Alabamaset)
+Alabamaset.head()
+import matplotlib.pyplot as plt
+import pandas as pd
+
+Alabamaset['Year'] = pd.to_numeric(Alabamaset['Year'], errors='coerce')
+Alabamaset['White '] = pd.to_numeric(Alabamaset['White'], errors='coerce')
+
+# Group by Year and take the mean of 'White Alone' population (to handle duplicates)
+data_grouped = Alabamaset.groupby('Year')['White'].mean().reset_index()
+
+# Sort the data by Year
+data_grouped = data_grouped.sort_values('Year')
+
+# Create the plot
+plt.figure(figsize=(10, 6))
+plt.plot(data_grouped['Year'], data_grouped['White'], marker='o', linestyle='-')
+plt.title('White Population Over Years')
+plt.xlabel('Year')
+plt.ylabel('White Alone Population')
+plt.xticks(data_grouped['Year'].astype(int), rotation=45)  # Rotate x-axis labels for better readability
+plt.grid(True)
+plt.tight_layout()  # Adjust layout to make sure labels fit
+plt.show()
+
+df11 = pd.read_csv('/content/Alabama2020data.csv')
+df12 = pd.read_csv('/content/Alabama2021data.csv')
+df13= pd.read_csv('/content/Alabama2022data.csv')
+
+#Here is the second dataset uploading the 3 years 
+df11['Year'] = 2020
+df12['Year'] = 2021
+df13['Year'] = 2022
+
+data = pd.concat([ df11, df12, df13], ignore_index=True)
+
+data_new = data[['Label (Grouping)', 'Alabama!!Estimate', 'Year']]
+# data_new.set_index('Label (Grouping)', inplace=True)
+data_new.T.head()
+
+data_new = data_new.map(lambda x: x.replace('\xa0', '') if isinstance(x, str) else x)
+data_new.columns = data_new.columns.str.replace('\xa0', '')
+# print("CLEANED DATA: ", data_new)
+# print(data_new)
+grouping = data_new['Label (Grouping)'].tolist()
+print(grouping)
+
+# Select specific columns
+selected_columns = ['White', 'Black or African American', 'American Indian and Alaska Native', 'Asian','Native Hawaiian and Other Pacific Islander' ]
+
+# Create a new DataFrame with only the selected columns
+df_selected = data_new[data_new['Label (Grouping)'].isin(selected_columns)]
+
+pivot_table = df_selected.pivot_table(index='Year', columns='Label (Grouping)', values='Alabama!!Estimate', aggfunc='first')
+pivot_table.reset_index(inplace=True)
+
+# Assuming your DataFrame is named df
+# Apply this to all columns except 'State' and 'Year'
+for column in pivot_table.columns:
+    if column not in ['State', 'Year']:
+        # Remove commas and convert to numeric
+        pivot_table[column] = pivot_table[column].str.replace(',', '').astype(float)
+
+# Display the result
+print(pivot_table.head())
+
+# Verify the data types
+print(pivot_table.dtypes)
+# Display the new DataFrame
+pivot_table.head()
+
+
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Assuming 'Testset' is the DataFrame containing your data
+
+# Convert 'Year' to numeric
+pivot_table['Year'] = pd.to_numeric(pivot_table['Year'], errors='coerce')
+
+# Convert 'White' to numeric without using .str (since it's already numeric)
+pivot_table['White'] = pd.to_numeric(pivot_table['White'], errors='coerce')
+
+# Group by Year and take the mean of White population (to handle duplicates)
+data_grouped = pivot_table.groupby('Year')['White'].mean().reset_index()
+
+# Sort the data by Year
+data_grouped = data_grouped.sort_values('Year')
+
+# Create the plot
+plt.figure(figsize=(10, 6))
+plt.plot(data_grouped['Year'], data_grouped['White'], marker='o')
+plt.title('White Population Over Years')
+plt.xlabel('Year')
+plt.ylabel('White Population In Alabama(In millions)')
+
+# Set x-axis ticks for each year
+plt.xticks(data_grouped['Year'].astype(int))
+
+plt.grid(True)
+plt.show()
+
+# Print the first few rows of the grouped data
+print(data_grouped.head())
+
+# Print data types
+print(data_grouped.dtypes)
+
+
+from google.colab import files
+common_columns = set(Alabamaset.columns).intersection(pivot_table.columns)
+print(common_columns)
+total_combined_data = pd.concat([Alabamaset, pivot_table], ignore_index=True)
+print(total_combined_data)
+total_combined_data.head()
+total_combined_data.to_csv('cleaned_data.csv', index=False)
+total_combined_data = total_combined_data.drop(total_combined_data.columns[5], axis=1)
+
+files.download('cleaned_data.csv')
+
+
+
+
