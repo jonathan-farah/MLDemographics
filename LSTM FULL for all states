@@ -1,0 +1,150 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+from datasets import load_dataset
+import matplotlib.pyplot as plt
+
+# List of state-specific Hugging Face dataset names
+states = ["Alabama", "California", "NewYork", "Texas", "Wyoming", "Hawaii"]
+
+# Debugging print: Loop starts
+print("Starting loop over states...")
+
+for state in states:
+    try:
+        # Print the state being processed
+        print(f"Processing state: {state}")
+
+        # Load each dataset for the respective state
+        dataset_name = f"AdityaA44/Racepopulation{state}"
+        df = load_dataset(dataset_name, split='train').to_pandas()
+
+        # Data processing and scaling
+        white_alone = df['White'].values.reshape(-1, 1)
+
+        # Standardize the data
+        scaler = StandardScaler()
+        white_alone_scaled = scaler.fit_transform(white_alone)
+
+        # Convert to tensors
+        white_alone_tensor = torch.tensor(white_alone_scaled, dtype=torch.float32)
+
+        # Function to create datasets with window size
+        def create_dataset(X, window_size):
+            num_samples = (X.shape[0] - window_size)
+            X_featurized, y = [], []
+            for i in range(num_samples):
+                X_featurized.append(X[i:i+window_size])
+                y.append(X[i+1:i+window_size+1])
+            return torch.stack(X_featurized).squeeze(), torch.stack(y).squeeze()
+
+        # Create dataset
+        X_full, y = create_dataset(white_alone_tensor, 5)
+        train_size = int(len(X_full) * 0.8)
+
+        X_train, y_train = X_full[:train_size], y[:train_size]
+        X_val, y_val = X_full[train_size:], y[train_size:]
+
+        # Convert to TensorDatasets
+        train_dataset = TensorDataset(X_train, y_train)
+        val_dataset = TensorDataset(X_val, y_val)
+
+        # Create DataLoaders for batching
+        batch_size = 4
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+        # Define LSTM model
+        class LSTMModel(nn.Module):
+            def __init__(self, input_size, hidden_size, num_layers, output_size):
+                super(LSTMModel, self).__init__()
+                self.hidden_size = hidden_size
+                self.num_layers = num_layers
+                self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+                self.fc = nn.Linear(hidden_size, output_size)
+
+            def forward(self, x):
+                batch_size = x.size(0)
+                h0 = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(x.device)
+                c0 = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(x.device)
+                out, _ = self.lstm(x, (h0, c0))
+                out = self.fc(out)
+                return out
+
+        # Initialize the model, loss function, and optimizer
+        input_size = 1  # One feature ('White Alone')
+        hidden_size = 512
+        num_layers = 2
+        output_size = 1  # Predicting one value (population)
+        num_epochs = 72
+        learning_rate = 0.001   
+
+        model = LSTMModel(input_size, hidden_size, num_layers, output_size)
+        criterion = nn.MSELoss()
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+        # Training loop
+        for epoch in range(num_epochs):
+            model.train()
+            train_loss = 0.0
+            for X_batch, y_batch in train_loader:
+                optimizer.zero_grad()
+                outputs = model(X_batch.unsqueeze(-1))  # Add a feature dimension
+                loss = criterion(outputs, y_batch.unsqueeze(-1))
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item() * X_batch.size(0)
+
+            train_loss /= len(train_loader.dataset)
+
+            model.eval()
+            val_loss = 0.0
+            with torch.no_grad():
+                for X_batch, y_batch in val_loader:
+                    outputs = model(X_batch.unsqueeze(-1))  # Add a feature dimension
+                    loss = criterion(outputs, y_batch.unsqueeze(-1))
+                    val_loss += loss.item() * X_batch.size(0)
+
+            val_loss /= len(val_loader.dataset)
+            print(f'Epoch {epoch+1}/{num_epochs}, State: {state}, Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}')
+
+        # Make predictions
+        model.eval()
+        predictions = []
+        with torch.no_grad():
+            for input in X_full:
+                output = model(input.unsqueeze(0).unsqueeze(-1)).squeeze()[-1]
+                predictions.append(output.item())
+
+        # Convert predictions and actuals to original scale
+        predictions = scaler.inverse_transform(np.array(predictions).reshape(-1, 1))
+        all_actuals = df['White'].values
+
+        # Plot predictions vs actuals
+        plt.figure(figsize=(15, 6))
+        plt.plot(df['Year'][5:], all_actuals[5:], label='Actual', marker='o')
+        plt.plot(df['Year'][5:], predictions, label='Predicted', marker='x')
+        plt.title(f'Actual vs Predicted White Alone Population in {state} (1990-2022)')
+        plt.xlabel('Year')
+        plt.ylabel('White Alone Population')
+        plt.legend()
+        plt.grid(True)
+        plt.xticks(range(1990, 2023, 1), rotation=45)
+        plt.gca().xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x)}"))
+        plt.tight_layout()
+        plt.show()
+
+        # Calculate and print MSE
+        mse = np.mean((all_actuals - predictions) ** 2)
+        print(f"State: {state}, Mean Squared Error: {mse:.4f}")
+
+    except Exception as e:
+        # Catch any issues and print which state failed
+        print(f"An error occurred while processing {state}: {e}")
+
+# Debugging print: Loop ends
+print("Finished loop over states.")
