@@ -1,0 +1,84 @@
+# MSE calculation function
+import numpy as np
+def mse(predictions, targets):
+    return np.mean((predictions - targets) ** 2)
+
+# List of states to iterate over
+states = ["Alabama", "California", "NewYork", "Texas", "Wyoming", "Hawaii"]
+
+# Set parameters
+prediction_length = 12
+num_samples = 100
+device = torch.device("cpu")
+
+# Loop through each state
+for state in states:
+    print(f"Processing data for {state}")
+
+    # Load the dataset for the current state
+    dataset_name = f"AdityaA44/MonthlyRacepopulation{state}"
+    df = load_dataset(dataset_name, split='train').to_pandas()
+    
+    # Display the first few rows
+    print(df.head())
+
+    # Convert 'Date' to datetime format
+    df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')  # Adjust the format if necessary
+    df = df.melt(id_vars='Date', var_name='type_id', value_name='population')
+
+    # Set 'Date' as the index
+    df.set_index('Date', inplace=True)
+
+    # Check and convert numerical columns to float32 for Lag-Llama compatibility
+    for col in df.columns:
+        if df[col].dtype != 'object' and pd.api.types.is_string_dtype(df[col]) == False:
+            df[col] = df[col].astype('float32')
+
+    # Create the LagLlama dataset object
+    dataset = PandasDataset.from_long_dataframe(df,
+                                                target="population",  # Use all population columns as target
+                                                item_id="type_id",
+                                                freq="M")
+
+    # Get Lag-Llama predictions
+    forecasts, tss = get_lag_llama_predictions(dataset, prediction_length, device, num_samples=num_samples)
+    
+    # Calculate Mean Squared Error (MSE) and store it
+    mse_list = []
+    
+    # Iterate through the first 9 series and plot the predicted samples
+    plt.figure(figsize=(20, 15))
+    date_formater = mdates.DateFormatter('%b, %d')
+    plt.rcParams.update({'font.size': 15})
+
+    for idx, (forecast, ts) in islice(enumerate(zip(forecasts, tss)), 9):
+        ax = plt.subplot(3, 3, idx + 1)
+
+        # Plot target and forecast
+        plt.plot(ts[-4 * prediction_length:].to_timestamp(), label="target")
+        forecast.plot(color='g')
+        plt.xticks(rotation=60)
+        ax.xaxis.set_major_formatter(date_formater)
+
+        # Calculate MSE
+        mean_prediction = forecast.mean  # Extract mean of forecast samples
+        actual_values = ts.values[-prediction_length:]  # Convert target time series to values
+        
+        # Convert to numpy arrays if not already
+        mean_prediction = np.array(mean_prediction)
+        actual_values = np.array(actual_values)
+        
+        # Calculate MSE
+        mse_value = mse(mean_prediction, actual_values)
+        mse_list.append(mse_value)
+
+        # Set title with state and type_id
+        ax.set_title(f"{state}: {forecast.item_id}\nMSE: {mse_value:.2f}")
+
+    plt.gcf().tight_layout()
+    plt.legend()
+    plt.suptitle(f'Predictions for {state}', fontsize=20)
+    plt.show()
+
+    # Print the MSE for the state
+    print(f"Mean Squared Errors for {state}: {mse_list}")
